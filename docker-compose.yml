@@ -1,0 +1,62 @@
+# ============================================================
+# IntelliScrape — First Milestone (Auth) local dev environment
+#
+# Brings up:
+#   - postgres: the relational database
+#   - backend : the FastAPI auth service (with hot-reload for dev)
+#
+# NOTE: Redis/Celery are intentionally NOT included yet — they belong
+# to the next milestone (job scraping). Keeping this milestone's
+# compose file lean makes it easier to reason about and debug.
+#
+# Usage:
+#   cp .env.example .env        # then edit secrets
+#   docker compose up --build
+# ============================================================
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: intelliscrape_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    ports:
+      # Exposed to host only for local debugging (psql, GUI clients).
+      # Remove this in any shared/staging environment.
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      # The backend waits for this healthcheck to pass before starting,
+      # so we never race against a Postgres that isn't ready yet.
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: intelliscrape_backend
+    restart: unless-stopped
+    env_file:
+      - .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+    volumes:
+      # Mount source for hot-reload during local development.
+      # Remove this volume mount in production images.
+      - ./backend/app:/app/app
+    command: >
+      uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+volumes:
+  postgres_data:
+    driver: local
