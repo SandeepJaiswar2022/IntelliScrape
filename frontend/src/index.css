@@ -1,0 +1,64 @@
+/*
+  ===========================================================
+  IntelliScrape — Design notes (read this before touching UI)
+  ===========================================================
+
+  Visual direction: "market signal" -- this is a job-intelligence
+  product, so the design leans into data density and legibility
+  rather than a marketing-site hero. Deliberately avoided the
+  generic AI-generated defaults (warm cream + serif, near-black +
+  neon, broadsheet hairlines) in favor of something specific to this
+  product: a warm amber "signal" accent against calm neutral
+  surfaces, with a monospace utility face reserved for tags,
+  timestamps, and counts -- tying typography itself to the idea of
+  a live data feed.
+
+  Signature element: each job card's left edge is a vertical bar
+  whose color intensity encodes posting freshness (bright amber =
+  updated in the last 3 days, muted = older). This is functional,
+  not decorative -- it's the fastest way to scan "what's new" in a
+  list of dozens of postings, which is the single most useful signal
+  on a job board.
+
+  Type system:
+    - font-display (Space Grotesk): headings only, used with restraint
+    - font-sans (Inter): all body text
+    - font-mono (IBM Plex Mono): tags, locations, timestamps, counts
+*/
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    /* Smooth theme transitions when toggling dark/light, without
+       animating every single property (which gets janky on complex
+       pages) -- just color/background/border. */
+    @apply scroll-smooth;
+  }
+
+  body {
+    @apply bg-canvas text-ink dark:bg-midnight dark:text-mist font-sans antialiased;
+    @apply transition-colors duration-200;
+  }
+
+  /* Visible keyboard focus everywhere -- accessibility floor from the
+     design skill's guidance, not optional polish. */
+  :focus-visible {
+    @apply outline-none ring-2 ring-signal ring-offset-2 ring-offset-canvas dark:ring-offset-midnight;
+  }
+}
+
+@layer utilities {
+  /* Respect reduced-motion preferences: anything using this utility
+     instead of a raw `transition` class backs off for users who've
+     asked their OS for less motion. */
+  @media (prefers-reduced-motion: reduce) {
+    * {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+}

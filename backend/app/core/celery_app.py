@@ -79,12 +79,25 @@ celery_app.conf.update(
     task_time_limit=180,
 )
 
-# Tells Celery to look for `@celery_app.task` definitions inside
-# app/tasks/ automatically, instead of importing each task module by
-# hand here. As more task modules get added later (e.g. a Playwright
-# scraping task), they're picked up for free as long as they live under
-# app/tasks/.
-
+# Explicitly import the module(s) containing @celery_app.task definitions.
+#
+# You might expect `celery_app.autodiscover_tasks(["app.tasks"])` here
+# instead -- that was actually the first version of this file, and it
+# had a subtle, hard-to-spot bug: autodiscover_tasks() appends a
+# `related_name` (default "tasks") to each package you give it, so
+# `autodiscover_tasks(["app.tasks"])` actually tries to import
+# `app.tasks.tasks`, which doesn't exist. It fails silently -- the
+# worker starts up fine, just with zero registered tasks -- and the
+# only symptom is every task message getting rejected at runtime with
+# "Received unregistered task of type ...". That's a genuinely easy
+# trap to fall into with Celery's Django-oriented autodiscovery
+# defaults on a non-Django project structure like this one.
+#
+# An explicit import sidesteps the whole footgun: it's unambiguous,
+# and if a task module fails to import for any reason, you get a loud
+# ImportError at worker startup instead of a silent no-op. As more
+# task modules get added later (e.g. a Playwright scraping task),
+# add their import here too.
 from app.tasks import job_scraping_tasks  # noqa: E402,F401
 
 # --- Beat schedule: recurring tasks ---
