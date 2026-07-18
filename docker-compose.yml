@@ -1,13 +1,14 @@
 # ============================================================
-# IntelliScrape — First Milestone (Auth) local dev environment
+# IntelliScrape — local dev environment
 #
 # Brings up:
-#   - postgres: the relational database
-#   - backend : the FastAPI auth service (with hot-reload for dev)
-#
-# NOTE: Redis/Celery are intentionally NOT included yet — they belong
-# to the next milestone (job scraping). Keeping this milestone's
-# compose file lean makes it easier to reason about and debug.
+#   - postgres     : the relational database
+#   - backend      : the FastAPI auth service (with hot-reload for dev)
+#   - redis        : Celery's broker (the task "mailbox" — see
+#                     app/core/celery_app.py for the full explanation)
+#   - celery_worker: executes scraping tasks picked up from the queue
+#   - celery_beat  : schedules the recurring "fetch jobs every 6 hours"
+#                     task — a separate process from the worker itself
 #
 # Usage:
 #   cp .env.example .env        # then edit secrets
@@ -26,7 +27,7 @@ services:
     ports:
       # Exposed to host only for local debugging (psql, GUI clients).
       # Remove this in any shared/staging environment.
-      - "5432:5432"
+      - "5433:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -36,6 +37,7 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
+
 
   backend:
     build:
@@ -56,6 +58,66 @@ services:
       - ./backend/app:/app/app
     command: >
       uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+  redis:
+    image: redis:7-alpine
+    container_name: intelliscrape_redis
+    restart: unless-stopped
+    ports:
+      # Exposed to host only for local debugging (redis-cli).
+      # Remove in any shared/staging environment.
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  celery_worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: intelliscrape_celery_worker
+    restart: unless-stopped
+    env_file:
+      - .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./backend/app:/app/app
+    # --pool=solo runs the worker as a single process with no forking.
+    # This is a deliberate MVP choice: Celery's default "prefork" pool
+    # forks child processes, which (as explained in
+    # app/core/database.py::task_db_session) can cause subtle issues
+    # for async DB drivers if not handled carefully. --pool=solo
+    # sidesteps the whole class of problem for now. It means tasks run
+    # one at a time rather than in parallel — a total non-issue at this
+    # milestone's scale (5-20 companies, one task type). Revisit this
+    # once task volume/concurrency actually demands it.
+    command: celery -A app.core.celery_app worker --loglevel=info --pool=solo
+
+  celery_beat:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: intelliscrape_celery_beat
+    restart: unless-stopped
+    env_file:
+      - .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./backend/app:/app/app
+    # beat only SCHEDULES tasks (drops them on the queue on a timer);
+    # celery_worker above is what actually executes them. Two separate
+    # processes/containers, on purpose — see app/core/celery_app.py.
+    command: celery -A app.core.celery_app beat --loglevel=info
 
 volumes:
   postgres_data:

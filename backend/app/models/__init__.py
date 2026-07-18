@@ -7,5 +7,7 @@ silently miss tables that were never imported anywhere.
 
 from app.models.user import User
 from app.models.refresh_token import RefreshToken
+from app.models.company import Company
+from app.models.job import Job
 
-__all__ = ["User", "RefreshToken"]
+__all__ = ["User", "RefreshToken", "Company", "Job"]

@@ -1,10 +1,96 @@
-# IntelliScrape — First Milestone (Auth Service)
+# IntelliScrape — Milestones 1 & 2 (Auth + Job Scraping)
 
-This is the first buildable slice of IntelliScrape: a standalone
-FastAPI authentication service. Nothing job/scraping-related lives
-here yet — that's the next milestone. This milestone is deliberately
-scoped to **just** getting auth right, since everything else in the
-product depends on it.
+**Milestone 1** is a standalone FastAPI authentication service.
+**Milestone 2** (this update) adds the first real data pipeline: a
+Celery task that pulls job postings from Greenhouse's public API for a
+configurable list of companies (starting with 5, built to scale to 20+
+with zero code changes) and stores them in Postgres, deduped across
+repeated runs.
+
+## What is Celery, and why does this project need it?
+
+If you've never used Celery before, here's the short version (the full
+explanation, with more detail, lives in
+`backend/app/core/celery_app.py` — read that file's docstring when you
+get to it).
+
+FastAPI is built for **request/response**: someone hits an endpoint,
+your code runs for a few milliseconds, a response goes back. That
+model doesn't fit "fetch job postings from 5 (soon 20+) external
+companies' APIs" — that can take several seconds, can fail partway
+through, and critically, needs to happen **whether or not anyone is
+using the app right now** (e.g. "every 6 hours, automatically").
+
+Celery moves that kind of work into its own separate processes,
+outside the request/response cycle entirely:
+
+- **Redis** acts as a simple mailbox/queue: "please run this task" gets
+  dropped onto it.
+- A **`celery worker`** process is constantly watching that queue. When
+  a task shows up, it picks it up and actually runs the Python function.
+- A **`celery beat`** process is a scheduler — it doesn't do any work
+  itself, it just drops tasks onto the queue on a timer (our "every 6
+  hours" rule). It's a separate process from the worker on purpose.
+
+None of this runs inside your FastAPI process. Look at
+`docker-compose.yml` — `celery_worker` and `celery_beat` are their own
+containers, completely independent of the `backend` container serving
+HTTP traffic. That separation is the whole point: if Greenhouse is slow
+or down, your API stays fast and responsive regardless.
+
+## Companies configured (start of 5)
+
+Verified, real Greenhouse board tokens (the slug in a company's public
+careers URL — e.g. `job-boards.greenhouse.io/stripe` → token `stripe`):
+
+```
+stripe, gitlab, figma, robinhood, asana
+```
+
+Configured via `GREENHOUSE_COMPANY_TOKENS` in `.env` — a plain
+comma-separated list. Growing this to 20+ later is a one-line `.env`
+change, no code changes.
+
+## New pieces added this milestone
+
+```
+backend/app/
+├── core/
+│   └── celery_app.py           # Celery app instance, config, beat schedule
+├── models/
+│   ├── company.py               # Company table
+│   └── job.py                   # Job table (unique constraint = the dedup mechanism)
+├── services/
+│   ├── job_sources/
+│   │   ├── base.py              # JobSource interface + RawJobPosting shape
+│   │   └── greenhouse.py        # Greenhouse API implementation
+│   └── job_ingestion_service.py # Upserts RawJobPosting -> DB rows, dedup logic
+└── tasks/
+    └── job_scraping_tasks.py    # The actual Celery task
+```
+
+**Why the `JobSource` abstraction exists**: per this project's roadmap,
+scraping LinkedIn/Naukri directly is legally risky (ToS violations) and
+technically fragile (anti-bot defenses). Greenhouse's public API is the
+safe starting point. But the whole design is built so that adding a
+second source later (Lever's API, a specific company's own career page)
+never touches `job_ingestion_service.py` or the Celery task — only a
+new class implementing `JobSource.fetch_jobs()`.
+
+## How the dedup actually works
+
+Every `Job` row is uniquely identified by `(source, source_job_id)` —
+see the `UniqueConstraint` on the `Job` model. Ingestion uses Postgres'
+native `INSERT ... ON CONFLICT DO UPDATE`: re-running the fetch (every
+6 hours, or manually) updates existing postings in place instead of
+creating duplicates. This was verified directly against a real
+Postgres instance during development — see the git history / build
+notes if you want the exact test, but in short: running the same
+ingestion twice with one changed job, one unchanged job, and one new
+job resulted in exactly 3 rows, not 4, with the changed job's title
+correctly updated in place.
+
+## Running it locally
 
 ## What's implemented
 
@@ -79,17 +165,51 @@ docker compose up --build
 The API will be live at `http://localhost:8000`.
 Interactive docs (dev only): `http://localhost:8000/docs`.
 
+This now brings up 5 containers: `postgres`, `backend`, `redis`,
+`celery_worker`, `celery_beat`. Check all of them came up healthy with
+`docker compose ps`.
+
 ### First-time database setup (migrations)
 
-With the containers running, generate and apply the initial migration:
+A migration covering all four tables (`users`, `refresh_tokens`,
+`companies`, `jobs`) is already included in
+`alembic/versions/` — it was generated and applied against a real
+Postgres instance during development to confirm it's correct, so you
+don't need to regenerate it. Just apply it:
 
 ```bash
-docker compose exec backend alembic revision --autogenerate -m "create users and refresh_tokens tables"
 docker compose exec backend alembic upgrade head
 ```
 
-From then on, whenever you change a model in `app/models/`, repeat the
-same two commands to generate and apply a new migration.
+From now on, whenever you change a model in `app/models/` (adding a
+field, a new table, etc.), generate a new migration the same way:
+
+```bash
+docker compose exec backend alembic revision --autogenerate -m "describe your change"
+docker compose exec backend alembic upgrade head
+```
+
+### Manually triggering the Greenhouse fetch (without waiting for the schedule)
+
+The task runs automatically every 6 hours via `celery_beat`, but for
+testing you don't want to wait. Trigger it directly:
+
+```bash
+docker compose exec celery_worker celery -A app.core.celery_app call app.tasks.job_scraping_tasks.fetch_greenhouse_jobs
+```
+
+Then watch the `celery_worker` logs (`docker compose logs -f
+celery_worker`) to see it fetch and ingest. Verify the results landed
+in the database:
+
+```bash
+docker compose exec postgres psql -U intelliscrape -d intelliscrape_db -c "SELECT title, location FROM jobs LIMIT 10;"
+docker compose exec postgres psql -U intelliscrape -d intelliscrape_db -c "SELECT name, source_company_token FROM companies;"
+```
+
+Run the same trigger command a second time — row counts in `jobs`
+should NOT roughly double; they should stay the same (existing postings
+updated in place) plus only genuinely new postings added.
 
 ## Trying the endpoints
 
@@ -149,7 +269,8 @@ immediately for real feedback:
 
 ## Next milestone
 
-Frontend (React) auth pages (register/login forms, protected route
-handling, silent token refresh) — nothing job-related yet, per the
-roadmap's ordering: get the whole auth loop working end-to-end,
-frontend included, before adding any scraping/jobs functionality.
+Per the roadmap: Phase 2 — a search/browse API (`GET /api/v1/jobs` with
+filters for role/location/tech stack) plus a React frontend page to
+list the scraped jobs. This milestone deliberately has no jobs-facing
+API endpoints yet — just the pipeline getting real data into Postgres
+reliably, which everything else depends on.

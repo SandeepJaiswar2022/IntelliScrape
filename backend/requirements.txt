@@ -19,3 +19,10 @@ argon2-cffi==23.1.0
 
 # --- Rate limiting (brute-force protection on auth endpoints) ---
 slowapi==0.1.9
+
+# --- Background tasks (job scraping) ---
+celery[redis]==5.4.0
+redis==5.2.1
+
+# --- HTTP client for calling external job source APIs (e.g. Greenhouse) ---
+httpx==0.28.1

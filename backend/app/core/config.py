@@ -43,12 +43,30 @@ class Settings(BaseSettings):
     MAX_FAILED_LOGIN_ATTEMPTS: int = 5
     ACCOUNT_LOCKOUT_MINUTES: int = 15
 
+    # --- Redis (Celery broker + result backend) ---
+    # Inside docker-compose the host is the service name "redis";
+    # outside Docker (e.g. running the worker directly) use "localhost".
+    REDIS_URL: str = "redis://redis:6379/0"
+
+    # --- Job scraping: Greenhouse ---
+    # Comma-separated list of Greenhouse "board tokens" -- the slug in a
+    # company's public careers URL, e.g.
+    # https://job-boards.greenhouse.io/stripe -> token is "stripe".
+    # Starting with 5 real, verified tokens; add more here as the
+    # project grows -- no code changes needed, just this list.
+    GREENHOUSE_COMPANY_TOKENS: str = "stripe,gitlab,figma,robinhood,asana"
+
     model_config = SettingsConfigDict(env_file=".env", case_sensitive=True)
 
     @property
     def cors_origins_list(self) -> list[str]:
         """Split the comma-separated CORS_ORIGINS string into a clean list."""
         return [origin.strip() for origin in self.CORS_ORIGINS.split(",") if origin.strip()]
+
+    @property
+    def greenhouse_company_tokens_list(self) -> list[str]:
+        """Split the comma-separated GREENHOUSE_COMPANY_TOKENS string into a clean list."""
+        return [t.strip() for t in self.GREENHOUSE_COMPANY_TOKENS.split(",") if t.strip()]
 
     @property
     def is_production(self) -> bool:
