@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useDebouncedValue } from "../hooks/useDebouncedValue";
 import { useJobs } from "../hooks/useJobs";
+import { useTechStackOptions } from "../hooks/useTechStackOptions";
 import { JobFiltersBar } from "../components/JobFiltersBar";
 import { JobCard } from "../components/JobCard";
 import { LoadingSkeleton } from "../components/LoadingSkeleton";
@@ -16,19 +17,29 @@ const SEARCH_DEBOUNCE_MS = 350;
 export function JobsPage() {
   const [titleInput, setTitleInput] = useState("");
   const [locationInput, setLocationInput] = useState("");
+  const [experienceLevel, setExperienceLevel] = useState("");
+  const [techStack, setTechStack] = useState<string[]>([]);
   const [page, setPage] = useState(1);
 
   const debouncedTitle = useDebouncedValue(titleInput, SEARCH_DEBOUNCE_MS);
   const debouncedLocation = useDebouncedValue(locationInput, SEARCH_DEBOUNCE_MS);
 
+  const { data: techStackOptions } = useTechStackOptions();
+
   const { data, isLoading, isError, error } = useJobs({
     title: debouncedTitle || undefined,
     location: debouncedLocation || undefined,
+    experience_level: experienceLevel || undefined,
+    tech_stack: techStack.length > 0 ? techStack : undefined,
     page,
     page_size: PAGE_SIZE,
   });
 
-  const hasActiveFilters = titleInput.trim() !== "" || locationInput.trim() !== "";
+  const hasActiveFilters =
+    titleInput.trim() !== "" ||
+    locationInput.trim() !== "" ||
+    experienceLevel !== "" ||
+    techStack.length > 0;
 
   function handleTitleChange(value: string) {
     setTitleInput(value);
@@ -40,9 +51,21 @@ export function JobsPage() {
     setPage(1);
   }
 
+  function handleExperienceLevelChange(value: string) {
+    setExperienceLevel(value);
+    setPage(1);
+  }
+
+  function handleTechStackChange(tags: string[]) {
+    setTechStack(tags);
+    setPage(1);
+  }
+
   function handleClearFilters() {
     setTitleInput("");
     setLocationInput("");
+    setExperienceLevel("");
+    setTechStack([]);
     setPage(1);
   }
 
@@ -61,8 +84,13 @@ export function JobsPage() {
         <JobFiltersBar
           titleInput={titleInput}
           locationInput={locationInput}
+          experienceLevel={experienceLevel}
+          techStack={techStack}
+          techStackOptions={techStackOptions ?? []}
           onTitleChange={handleTitleChange}
           onLocationChange={handleLocationChange}
+          onExperienceLevelChange={handleExperienceLevelChange}
+          onTechStackChange={handleTechStackChange}
         />
 
         {data && (

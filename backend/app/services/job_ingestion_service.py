@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.company import Company
 from app.models.job import Job
+from app.services.job_extraction_service import extract_experience_level, extract_tech_stack
 from app.services.job_sources.base import RawJobPosting
 
 logger = logging.getLogger(__name__)
@@ -77,6 +78,15 @@ async def ingest_job_postings(db: AsyncSession, postings: list[RawJobPosting]) -
             )
         company = companies_seen[posting.source_company_token]
 
+        # Rule-based extraction runs once here, at ingestion time --
+        # not at query/filter time. This keeps every future filtered
+        # search a plain column lookup instead of re-scanning
+        # title/description text on every request. Re-running
+        # ingestion (e.g. after this taxonomy grows) naturally
+        # refreshes these tags too, via the same upsert below.
+        experience_level = extract_experience_level(posting.title)
+        tech_stack = extract_tech_stack(posting.title, posting.description_html)
+
         stmt = pg_insert(Job).values(
             company_id=company.id,
             source=posting.source,
@@ -87,6 +97,8 @@ async def ingest_job_postings(db: AsyncSession, postings: list[RawJobPosting]) -
             description_html=posting.description_html,
             absolute_url=posting.absolute_url,
             source_updated_at=posting.source_updated_at,
+            experience_level=experience_level,
+            tech_stack=tech_stack,
             is_active=True,
         )
         stmt = stmt.on_conflict_do_update(
@@ -98,6 +110,8 @@ async def ingest_job_postings(db: AsyncSession, postings: list[RawJobPosting]) -
                 "description_html": stmt.excluded.description_html,
                 "absolute_url": stmt.excluded.absolute_url,
                 "source_updated_at": stmt.excluded.source_updated_at,
+                "experience_level": stmt.excluded.experience_level,
+                "tech_stack": stmt.excluded.tech_stack,
                 "is_active": True,
             },
         )

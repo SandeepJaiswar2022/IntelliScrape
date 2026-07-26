@@ -20,6 +20,9 @@ argon2-cffi==23.1.0
 # --- Rate limiting (brute-force protection on auth endpoints) ---
 slowapi==0.1.9
 
+# --- HTML parsing (tech-stack extraction, description plain-text rendering) ---
+beautifulsoup4==4.12.3
+
 # --- Background tasks (job scraping) ---
 celery[redis]==5.4.0
 redis==5.2.1

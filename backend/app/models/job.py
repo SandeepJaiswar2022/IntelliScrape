@@ -13,7 +13,7 @@ import uuid
 from datetime import datetime
 
 from sqlalchemy import Boolean, DateTime, ForeignKey, String, Text, UniqueConstraint
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
 
@@ -56,6 +56,27 @@ class Job(Base):
     description_html: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     absolute_url: Mapped[str] = mapped_column(String(1000), nullable=False)
+
+    # --- Derived fields (computed at ingestion time, not from the source) ---
+    # Neither of these exists in Greenhouse's data -- both are extracted
+    # from title/description via rule-based keyword matching. See
+    # app/services/job_extraction_service.py for the "why rule-based,
+    # not LLM" reasoning and known precision/recall limitations.
+    #
+    # None when the title has no explicit level signal (e.g. plain
+    # "Software Engineer") -- deliberately not defaulted to a guessed
+    # bucket like "Mid", since that would assert something the posting
+    # never actually said.
+    experience_level: Mapped[str | None] = mapped_column(String(50), nullable=True)
+
+    # JSONB (not a separate join table) is the right call at this
+    # scale: tech_stack is always read/written as a whole list per job,
+    # never queried independently of its job, and Postgres' JSONB
+    # containment operators (`@>`, used via SQLAlchemy's `.contains()`)
+    # give us efficient "job has tag X" filtering without needing a
+    # many-to-many table + joins for what's fundamentally a small,
+    # denormalized tag list.
+    tech_stack: Mapped[list[str]] = mapped_column(JSONB, default=list, nullable=False)
 
     # When the SOURCE says this posting was last updated -- distinct
     # from `scraped_at` below, which is when WE last saw it. The two

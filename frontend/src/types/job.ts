@@ -1,11 +1,6 @@
 /**
  * Mirrors app/schemas/job.py on the backend exactly -- keep these two
- * in sync whenever the API response shape changes. Deliberately kept
- * as plain interfaces (no validation library like zod) for this
- * milestone: the payload is small and fully controlled by our own
- * backend, so runtime validation would be defensive overkill right
- * now. Worth revisiting if this API ever accepts third-party data
- * directly into these shapes.
+ * in sync whenever the API response shape changes.
  */
 
 export interface Job {
@@ -14,9 +9,17 @@ export interface Job {
   company_name: string;
   location: string | null;
   department: string | null;
+  experience_level: string | null;
+  tech_stack: string[];
+  description_preview: string | null;
   absolute_url: string;
   source_updated_at: string | null; // ISO 8601 timestamp, or null
   scraped_at: string; // ISO 8601 timestamp
+}
+
+/** Full job detail -- everything Job has, plus the untruncated description. */
+export interface JobDetail extends Job {
+  description_text: string | null;
 }
 
 export interface PaginatedJobs {
@@ -31,6 +34,27 @@ export interface PaginatedJobs {
 export interface JobFilters {
   title?: string;
   location?: string;
+  experience_level?: string;
+  tech_stack?: string[];
   page?: number;
   page_size?: number;
 }
+
+/**
+ * Fixed experience-level buckets -- mirrors
+ * EXPERIENCE_LEVEL_PATTERNS in the backend's tech_taxonomy.py.
+ * Kept as a small hardcoded list here rather than fetched from an
+ * API (unlike tech stack tags): this list is small, stable, and
+ * defined by the backend's extraction logic itself, not by
+ * accumulated job data -- an API round-trip would add latency for
+ * something that essentially never changes.
+ */
+export const EXPERIENCE_LEVELS = [
+  "Intern",
+  "Entry",
+  "Mid",
+  "Senior",
+  "Staff",
+  "Principal",
+  "Lead",
+] as const;
