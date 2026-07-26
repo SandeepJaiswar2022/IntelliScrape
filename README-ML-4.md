@@ -128,4 +128,15 @@ SELECT title, experience_level, tech_stack FROM jobs LIMIT 10;
 
 ## Next steps
 
-Per our planning discussion: deploy Milestones 1–4 together as the first live MVP (Render + Supabase + Vercel). The multi-ATS router (Lever/Ashby/SmartRecruiters as additional `JobSource` implementations, Playwright as a last-resort fallback for whatever's left) is the deliberately deferred next milestone after that.
+MVP (Version 1): Deploy Milestones 1–4 together as the first production release using Vercel (frontend), Render (API and background worker), and Supabase (PostgreSQL database).
+
+
+▼ ATS Detector  
+    ├── Greenhouse Scraper 
+    ├── Lever Scraper 
+    ├── Ashby Scraper 
+    ├── Workday Scraper 
+    ├── SmartRecruiters Scraper 
+    ├── Oracle Scraper 
+    ├── SAP Scraper 
+    └── Generic Playwright Scraper

@@ -8,8 +8,11 @@ place, with types and sane defaults where a default is safe. This means:
   - every other module imports a single `settings` object instead of
     reading the environment directly
 """
+import os
+from pathlib import Path
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
+ENV_FILE = Path(".env")
 
 
 class Settings(BaseSettings):
@@ -17,6 +20,7 @@ class Settings(BaseSettings):
     APP_NAME: str = "IntelliScrape Auth Service"
     ENVIRONMENT: str = "development"  # development | staging | production
     DEBUG: bool = True
+    API_V1_PREFIX: str = "/api/v1"
 
     # --- Database ---
     DATABASE_URL: str  # e.g. postgresql+asyncpg://user:pass@host:5432/db
@@ -56,7 +60,11 @@ class Settings(BaseSettings):
     # project grows -- no code changes needed, just this list.
     GREENHOUSE_COMPANY_TOKENS: str = "stripe,gitlab,figma,robinhood,asana"
 
-    model_config = SettingsConfigDict(env_file=".env", case_sensitive=True)
+    model_config = SettingsConfigDict(
+        env_file=str(ENV_FILE) if ENV_FILE.exists() else None,
+        case_sensitive=True,
+        extra="ignore",
+    )
 
     @property
     def cors_origins_list(self) -> list[str]:

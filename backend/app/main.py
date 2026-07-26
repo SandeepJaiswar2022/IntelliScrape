@@ -18,14 +18,33 @@ from fastapi.responses import JSONResponse
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 
+from contextlib import asynccontextmanager
+from sqlalchemy import text
+from app.db.database import engine
+
 from app.api.v1.router import api_router
 from app.core.config import settings
 from app.utils.rate_limit import limiter
 
 logging.basicConfig(
-    level=logging.INFO if not settings.DEBUG else logging.DEBUG,
+    level=logging.DEBUG if settings.DEBUG else logging.INFO,
     format="%(asctime)s %(levelname)s %(name)s: %(message)s",
 )
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    logging.info("Checking database connection...")
+
+    async with engine.begin() as conn:
+        await conn.execute(text("SELECT 1"))
+
+    logging.info("Database connected successfully.")
+
+    yield
+
+    logging.info("Closing database engine...")
+
+    await engine.dispose()
 
 app = FastAPI(
     title=settings.APP_NAME,
@@ -35,6 +54,7 @@ app = FastAPI(
     # full API surface/schema to the public once this is live.
     docs_url="/docs" if not settings.is_production else None,
     redoc_url="/redoc" if not settings.is_production else None,
+    lifespan=lifespan,
 )
 
 # --- Rate limiting (see app/utils/rate_limit.py for the storage/scope reasoning) ---
@@ -55,7 +75,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(api_router, prefix="/api/v1")
+app.include_router(api_router, prefix=settings.API_V1_PREFIX)
 
 
 @app.get("/health", tags=["health"])

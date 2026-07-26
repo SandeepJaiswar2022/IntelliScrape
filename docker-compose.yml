@@ -50,6 +50,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      redis:
+        condition: service_healthy
     ports:
       - "8000:8000"
     volumes:
@@ -57,7 +59,10 @@ services:
       # Remove this volume mount in production images.
       - ./backend/app:/app/app
     command: >
+      sh -c "
+      alembic upgrade head &&
       uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+      "
 
   redis:
     image: redis:7-alpine
