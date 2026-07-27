@@ -20,7 +20,7 @@ from slowapi.errors import RateLimitExceeded
 
 from contextlib import asynccontextmanager
 from sqlalchemy import text
-from app.db.database import engine
+from app.core.database import engine
 
 from app.api.v1.router import api_router
 from app.core.config import settings
