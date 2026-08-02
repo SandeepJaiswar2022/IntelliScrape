@@ -13,9 +13,6 @@ from datetime import datetime
 
 from pydantic import BaseModel, EmailStr, Field, field_validator
 
-# A password must satisfy all of these to be accepted. Spelling the rule
-# out in one place means the same rule can be reused by a future
-# "check password strength while typing" endpoint if needed.
 _PASSWORD_MIN_LENGTH = 8
 _UPPERCASE_RE = re.compile(r"[A-Z]")
 _LOWERCASE_RE = re.compile(r"[a-z]")
@@ -53,7 +50,6 @@ class UserRegisterRequest(BaseModel):
     @field_validator("full_name")
     @classmethod
     def full_name_must_not_be_blank(cls, value: str) -> str:
-        # Catches inputs that are technically non-empty but only whitespace.
         stripped = value.strip()
         if not stripped:
             raise ValueError("Full name cannot be blank")
@@ -68,13 +64,22 @@ class UserLoginRequest(BaseModel):
 
 
 class UserResponse(BaseModel):
-    """Public-facing user representation — never includes hashed_password."""
+    """
+    Public-facing user representation — never includes hashed_password.
+    `role` is included so the frontend can decide what to show (e.g.
+    an Admin nav link) right after login/refresh, without a separate
+    lookup — the frontend must still never TRUST this for actual
+    authorization, since every protected admin action is independently
+    re-checked server-side (see dependencies/auth.py::require_admin).
+    Client-side role checks are for UI/UX only.
+    """
 
     id: uuid.UUID
     email: str
     full_name: str
     is_active: bool
     is_verified: bool
+    role: str
     created_at: datetime
 
     model_config = {"from_attributes": True}  # allows UserResponse.model_validate(orm_user)

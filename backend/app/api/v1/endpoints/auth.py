@@ -58,7 +58,7 @@ def _set_refresh_cookie(response: Response, raw_refresh_token: str) -> None:
         domain=settings.COOKIE_DOMAIN or None,
         httponly=True,  # never readable by client-side JavaScript
         secure=settings.COOKIE_SECURE,  # must be True in any HTTPS deployment
-        samesite="lax",  # sent on top-level navigation + same-site XHR; blocks most CSRF vectors
+        samesite="none" if settings.COOKIE_SECURE else "lax",  # sent on top-level navigation + same-site XHR; blocks most CSRF vectors
     )
 
 
