@@ -9,10 +9,8 @@ import asyncio
 import logging
 
 from app.core.celery_app import celery_app
-from app.core.config import settings
 from app.core.database import task_db_session
-from app.services.job_ingestion_service import ingest_job_postings
-from app.services.job_sources.greenhouse import GreenhouseJobSource
+from backend.app.services.job_scraping_service import scrape_greenhouse_jobs
 
 logger = logging.getLogger(__name__)
 
@@ -49,25 +47,5 @@ def fetch_greenhouse_jobs() -> dict:
 
 
 async def _fetch_greenhouse_jobs_async() -> dict:
-    """
-    The actual async work: fetch from Greenhouse, then store what
-    came back. Split out from `fetch_greenhouse_jobs` above purely so
-    the async code stays normal `async def`/`await` code, testable on
-    its own without going through Celery or asyncio.run() at all.
-    """
-    source = GreenhouseJobSource(company_tokens=settings.greenhouse_company_tokens_list)
-    postings = await source.fetch_jobs()
-
-    logger.info(
-        "Fetched %d job postings from Greenhouse across %d configured companies",
-        len(postings),
-        len(settings.greenhouse_company_tokens_list),
-    )
-
-    # `task_db_session()` (not the regular `get_db` FastAPI dependency)
-    # -- see its docstring in app/core/database.py for exactly why
-    # Celery tasks need their own DB session helper.
     async with task_db_session() as db:
-        summary = await ingest_job_postings(db, postings)
-
-    return summary
+        return await scrape_greenhouse_jobs(db)
