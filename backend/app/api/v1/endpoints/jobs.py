@@ -1,10 +1,17 @@
 """
 Jobs listing/search/detail endpoints.
 
-Deliberately public (no auth dependency) -- browsing jobs shouldn't
-require an account, same as every real job board. Auth gets layered
-onto other features (saved jobs, alerts, resume matching) in a later
-milestone, not onto basic browsing.
+=== Auth requirement, and the trade-off worth knowing about ===
+Every endpoint in this file now requires a valid access token
+(`Depends(get_current_active_user)`). This is a deliberate reversal of
+this file's original design, which had these endpoints public on
+purpose -- most real job boards let anyone browse without an account.
+Requiring login for basic browsing is a real product trade-off (higher
+friction for a first-time visitor, no more "quick look before I
+decide to sign up") -- implemented here because it was explicitly
+requested, not because it's obviously the better default. Worth
+revisiting if signup friction turns out to hurt more than the
+access-gating is worth.
 
 === Route ordering note ===
 FastAPI matches routes in the order they're registered. The static
@@ -23,26 +30,24 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.tech_taxonomy import TECH_TAXONOMY
+from app.dependencies.auth import get_current_active_user
+from app.models.user import User
 from app.schemas.job import JobDetailResponse, JobResponse, PaginatedJobsResponse
 from app.services.job_query_service import compute_total_pages, get_job_by_id, list_jobs
 from app.utils.html_text import strip_html, truncate_text
 
 router = APIRouter(prefix="/jobs", tags=["jobs"])
 
-# Plain-text preview length shown on job cards in the list view.
-# Full, untruncated text is only sent by the detail endpoint below.
 _DESCRIPTION_PREVIEW_LENGTH = 220
 
 
 @router.get("/tech-stack-options", response_model=list[str])
-async def get_tech_stack_options() -> list[str]:
+async def get_tech_stack_options(
+    current_user: User = Depends(get_current_active_user),
+) -> list[str]:
     """
     Return every canonical tech-stack tag the extraction pipeline can
-    produce -- powers the frontend's autocomplete filter input. Backed
-    by the taxonomy module (single source of truth) rather than a
-    distinct `SELECT DISTINCT tech_stack` query against the jobs table,
-    so the full list is available even before any job has been tagged
-    with every possible term.
+    produce -- powers the frontend's autocomplete filter input.
     """
     return sorted(TECH_TAXONOMY.keys())
 
@@ -67,6 +72,7 @@ async def get_jobs(
     page: int = Query(1, ge=1, description="1-indexed page number"),
     page_size: int = Query(20, ge=1, le=100, description="Results per page, max 100"),
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
 ) -> PaginatedJobsResponse:
     """List job postings with optional filtering and pagination."""
     jobs, total = await list_jobs(
@@ -110,7 +116,11 @@ async def get_jobs(
 
 
 @router.get("/{job_id}", response_model=JobDetailResponse)
-async def get_job(job_id: uuid.UUID, db: AsyncSession = Depends(get_db)) -> JobDetailResponse:
+async def get_job(
+    job_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+) -> JobDetailResponse:
     """
     Fetch a single job's full detail, including the untruncated plain-
     text description. This is the stable resource a "View full
@@ -122,10 +132,6 @@ async def get_job(job_id: uuid.UUID, db: AsyncSession = Depends(get_db)) -> JobD
     if job is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job not found")
 
-    plain = strip_html(job.description_html)
-
-    print("RAW =", job.description_html[:80])
-    print("PLAIN =", plain[:80])
     return JobDetailResponse(
         id=job.id,
         title=job.title,

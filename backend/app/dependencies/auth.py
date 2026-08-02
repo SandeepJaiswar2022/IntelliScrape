@@ -22,12 +22,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.security import decode_access_token
-from app.models.user import User
+from app.models.user import Role, User
 from app.services.auth_service import get_user_by_id
 
-# `auto_error=False` lets us return our own consistent 401 body/message
-# instead of FastAPI's default, and lets us distinguish "no token at
-# all" from "bad token" if we ever want to log them differently.
 _bearer_scheme = HTTPBearer(auto_error=False)
 
 
@@ -83,5 +80,34 @@ async def get_current_active_user(current_user: User = Depends(get_current_user)
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="This account has been deactivated",
+        )
+    return current_user
+
+
+async def require_admin(current_user: User = Depends(get_current_active_user)) -> User:
+    """
+    Layers an ADMIN-role check on top of get_current_active_user.
+
+    Deliberately built as "one more dependency on top of the existing
+    chain" rather than a separate token-decoding path -- this is what
+    guarantees an admin-only endpoint gets every check a normal
+    protected endpoint gets (valid token, not expired, user still
+    exists, account still active) PLUS the role check, with no
+    possibility of accidentally skipping one of those checks for admin
+    routes specifically.
+
+    Role is read from the freshly-loaded `current_user` row (a normal
+    DB read that already happens on every authenticated request) --
+    NOT from a claim embedded in the JWT itself. That's a deliberate
+    choice: embedding role in the token would mean a demoted admin
+    keeps admin access until their access token naturally expires
+    (up to ACCESS_TOKEN_EXPIRE_MINUTES later). Reading it fresh from
+    the database means a role change takes effect on the very next
+    request, at no extra query cost (the user row is already fetched).
+    """
+    if current_user.role != Role.ADMIN:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin access required",
         )
     return current_user
