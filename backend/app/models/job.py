@@ -47,7 +47,7 @@ class Job(Base):
     source_job_id: Mapped[str] = mapped_column(String(255), nullable=False)
 
     title: Mapped[str] = mapped_column(String(500), nullable=False)
-    location: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    location: Mapped[str | None] = mapped_column(Text, nullable=True)
     department: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
     # Full HTML job description as provided by the source. Rendered

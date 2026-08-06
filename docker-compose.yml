@@ -58,6 +58,7 @@ services:
       # Mount source for hot-reload during local development.
       # Remove this volume mount in production images.
       - ./backend/app:/app/app
+      - ./backend/alembic:/app/alembic
     command: >
       sh -c "
       alembic upgrade head &&
