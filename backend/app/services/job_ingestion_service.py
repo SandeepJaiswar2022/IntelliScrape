@@ -45,8 +45,7 @@ async def _get_or_create_company(
     return company
 
 
-async def ingest_job_postings(db: AsyncSession, postings: list[RawJobPosting]) -> dict:
-    """
+"""
     Upsert a batch of job postings into the database.
 
     === Dedup strategy, explained ===
@@ -69,7 +68,13 @@ async def ingest_job_postings(db: AsyncSession, postings: list[RawJobPosting]) -
     runs ever overlap (a check-then-act gap). The single atomic
     upsert statement avoids that entirely.
     """
+
+async def ingest_job_postings(db: AsyncSession, postings: list[RawJobPosting]) -> dict:
+    
     companies_seen: dict[str, Company] = {}
+
+    BATCH_SIZE = 50
+    processed = 0
 
     for posting in postings:
         if posting.source_company_token not in companies_seen:
@@ -117,6 +122,13 @@ async def ingest_job_postings(db: AsyncSession, postings: list[RawJobPosting]) -
         )
         await db.execute(stmt)
 
+        processed += 1
+
+        if processed % BATCH_SIZE == 0:
+            await db.commit()
+            logger.info("Committed %d jobs", processed)
+
+    # Commit any remaining jobs
     await db.commit()
 
     summary = {
